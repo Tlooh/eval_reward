@@ -1,0 +1,24 @@
+2024-01-23 11:21 | INFO: ---------------- Testing: ImageReward ----------------
+2024-01-23 11:21 | INFO: reward model: /data/liutao/checkpoints/ImageReward/best_lr=1e-05.pt
+2024-01-23 11:21 | INFO: result_dir: ./benchmark/ImageReward/
+2024-01-23 11:22 | INFO: iter 0 | acc: 0.0 | all_acc: 0.0
+2024-01-23 11:22 | INFO: iter 1 | acc: 0.0 | all_acc: 0.0
+2024-01-23 11:22 | INFO: iter 2 | acc: 0.0 | all_acc: 0.0
+2024-01-23 11:22 | INFO: iter 3 | acc: 0.0 | all_acc: 0.0
+2024-01-23 11:22 | INFO: iter 4 | acc: 0.0 | all_acc: 0.0
+2024-01-23 11:22 | INFO: ---------------- Testing: ImageReward ----------------
+2024-01-23 11:22 | INFO: reward model: /data/liutao/checkpoints/ImageReward/best_lr=1e-05.pt
+2024-01-23 11:22 | INFO: result_dir: ./benchmark/ImageReward/
+2024-01-23 11:23 | INFO: iter 0 | acc: 0.0 | all_acc: 0.0
+2024-01-23 11:23 | INFO: ---------------- Result ----------------
+2024-01-23 11:23 | INFO: 样本总数: 11496
+2024-01-23 11:23 | INFO: 一致性样本数: 0
+2024-01-23 11:23 | INFO: 一致率: 0.0
+2024-01-23 11:25 | INFO: ---------------- Testing: ImageReward ----------------
+2024-01-23 11:25 | INFO: reward model: /data/liutao/checkpoints/ImageReward/best_lr=1e-05.pt
+2024-01-23 11:25 | INFO: result_dir: ./benchmark/ImageReward/
+2024-01-23 11:25 | INFO: iter 0 | acc: 0.0 | all_acc: 0.0
+2024-01-23 11:25 | INFO: ---------------- Result ----------------
+2024-01-23 11:25 | INFO: 样本总数: 11496
+2024-01-23 11:25 | INFO: 一致性样本数: 0
+2024-01-23 11:25 | INFO: 一致率: 0.0
