@@ -1,5 +1,13 @@
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.functional as F
+import torch.nn as nn
+from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
+try:
+    from torchvision.transforms import InterpolationMode
+    BICUBIC = InterpolationMode.BICUBIC
+except ImportError:
+    BICUBIC = Image.BICUBIC
 
 from PIL import Image
 import clip
@@ -9,6 +17,23 @@ os.environ['http_proxy'] = 'http://127.0.0.1:7890'
 os.environ['https_proxy'] = 'http://127.0.0.1:7890'
 
 CLIP_DIMS = {"ViT-L/14":768,}
+
+
+"""----------------- CLIP-V2 -------------------"""
+
+def _convert_image_to_rgb(image):
+    return image.convert("RGB")
+
+
+def _transform(n_px):
+    return Compose([
+        Resize(n_px, interpolation=BICUBIC),
+        CenterCrop(n_px),
+        _convert_image_to_rgb,
+        ToTensor(),
+        Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+    ])
+
 
 class MLP(nn.Module):
     def __init__(self, input_size):
@@ -43,7 +68,7 @@ class MLP(nn.Module):
 
 
 
-class CLIPReward(nn.Module):
+class CLIPReward_v1(nn.Module):
     def __init__(self, clip_name = "ViT-L/14", device = 'cpu'):
         super().__init__()
         self.device = device
@@ -92,61 +117,80 @@ class CLIPReward(nn.Module):
         return rewards
 
 
-class CLIPScore(nn.Module):
-    def __init__(self, clip_name = "ViT-L/14", device = 'cpu'):
-        super().__init__()
-        self.device = device
-        self.clip_model, self.preprocess = clip.load(clip_name, device = device)
-        self.mlp = MLP(input_size=CLIP_DIMS[clip_name])
 
-    
-    def score(self, prompt, image):
-        # support image_path:str or image:Image
-        if isinstance(image, str):
-            image_path = image
-            pil_image = Image.open(image_path)
-        elif isinstance(image, Image.Image):
-            pil_image = image
-
-        # print(prompt)
-        # print(image)
-        # text encode
-        text = clip.tokenize(prompt, truncate=True).to(self.device) # [1, 77]
-        text_features = F.normalize(self.model.encode_text(text)) # [1, 768]
-        # text_features = self.model.encode_text(text) # [1, 768]
-
-
-        # image encode
-        image = self.preprocess(pil_image).unsqueeze(0).to(self.device) # [1, 3, 224, 224]
-        image_features = F.normalize(self.model.encode_image(image)) # [1, 768]
-        # image_features = self.model.encode_image(image) # [1, 768]
-        
-        logit_scale = self.model.logit_scale.exp()
-        # similarity = torch.sum(torch.mul(text_features, image_features), dim=1, keepdim=True)
-        similarity = logit_scale * image_features @ text_features.T
-        
-        # print("图像和文本的相似性得分:", similarity.detach().cpu().numpy().item())
-
-        return similarity.detach().cpu().numpy().item()
-    
-    def scores_list(self, prompts, images):
-        clip_scores = []
-        for prompt, image in zip(prompts, images):
-            clip_scores.append(self.score(prompt, image))
-        # for i in range(len(prompts)):
-        #     clip_scores.append(self.score(prompts[i], images[i]))
-
-        return clip_scores
-
-
-def CLIPReward_load(weight_path, device):
+def CLIPReward_v1_load(weight_path, device):
     print('load checkpoint from %s'%weight_path)
     state_dict = torch.load(weight_path, map_location='cpu')
 
-    model = CLIPReward(clip_name='ViT-L/14', device=device).to(device)
+    model = CLIPReward_v1(clip_name='ViT-L/14', device=device).to(device)
     msg = model.load_state_dict(state_dict, strict=False)
     print("checkpoint loaded")
     model.eval()
 
     return model
+
+
+"""----------------- CLIP-V2 -------------------"""
+
+class CLIPReward_v2(nn.Module):
+    def __init__(self, clip_name = "ViT-L/14", device = 'cpu'):
+        super().__init__()
+        self.device = device
+        self.clip_model, self.preprocess = clip.load(clip_name, device = device)
+        
+
+    def forward(self, batch_data):
+        # encode data, return shape [bsz]
+        better_score, worse_score = self.encode_pair(batch_data)
+
+        # 拼接成 [bsz, 2]
+        rewards = torch.cat([better_score.unsqueeze(1),worse_score.unsqueeze(1)], dim=1)
+
+        return rewards
+
+    
+    def encode_pair(self, batch_data):
+        # images：pil -> tensor
+        img_better, img_worse , text_tokens= batch_data['img_better'], batch_data['img_worse'], batch_data['clip_text']
+
+        # move to device
+        img_better = img_better.to(self.device) # [batch_size, C, H, W]
+        img_worse = img_worse.to(self.device) # [batch_size, C, H, W]
+        #[batch_size, 1, 77] ->  [batch_size, 77]
+        text_tokens = text_tokens.squeeze(dim = 1).to(self.device) 
+        
+        # encode images, texts
+        emb_better = self.clip_model.encode_image(img_better)
+        emb_worse = self.clip_model.encode_image(img_worse)
+        emb_text = self.clip_model.encode_text(text_tokens)
+
+        # normalized features
+        emb_better = emb_better / emb_better.norm(dim=1, keepdim=True)
+        emb_worse = emb_worse / emb_worse.norm(dim=1, keepdim = True)
+        emb_text = emb_text / emb_text.norm(dim=1, keepdim = True)
+
+        # cosine similarity as logits
+        logit_scale = self.clip_model.logit_scale.exp()
+        better_score = logit_scale * emb_better @ emb_text.t() # [bsz, bsz]
+        worse_score = logit_scale * emb_worse @ emb_text.t() # [bsz, bsz]
+        
+        # 取出对角线上的元素
+        better_score = torch.diag(better_score)
+        worse_score = torch.diag(worse_score)
+
+        return better_score, worse_score
+
+
+
+def CLIPReward_v2_load(weight_path, device):
+    print('load checkpoint from %s'%weight_path)
+    state_dict = torch.load(weight_path, map_location='cpu')
+    print(state_dict.keys())
+    model = CLIPReward_v2(clip_name=weight_path, device=device).to(device)
+    print("checkpoint loaded")
+    model.eval()
+
+    return model
+
+
 

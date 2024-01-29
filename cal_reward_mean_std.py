@@ -82,6 +82,7 @@ def main(args):
     elif args.benchmark == 'ImageReward':
         reward_model = ImageReward_load(args.rm_path, device=device)
     
+    reward_model.eval()
     # start Testing
     num_all = len(s2c_test_loader)
 
@@ -139,13 +140,35 @@ python cal_reward_mean_std.py
 # 测试 CLIP
 python cal_reward_mean_std.py --benchmark "CLIP" --rm_path /data/liutao/checkpoints/ClipReward/bs32_lr=5e-4.pt
 
+1. 第一次跑
 CLIP reward(无偏估计)
 * Dataset Mean: -0.03562733882188501
 * Dataset Variance: 5.205378545346869e-07
 * Dataset Standard Deviation (Std): 0.000721483093727557
 
-# model2
+# model2(无偏估计)
 Dataset Mean: 0.02702386127237202
 Dataset Variance: 0.0004931982316955882
 Dataset Standard Deviation (Std): 0.022208066815812406
+
+2. 第二次跑
+var2 5.205038385319706e-07
+std_2 0.0007214595196765863
+Dataset Mean: -0.035627373790714525
+Dataset Variance: 5.205264779925652e-07
+Dataset Standard Deviation (Std): 0.0007214752095481626
+
+var2 0.0004931767808330405
+std_2 0.022207583858516452
+Dataset Mean: 0.02702386127237202
+Dataset Variance: 0.0004931982316955882
+Dataset Standard Deviation (Std): 0.022208066815812406
+
+
+var2 7.0218404998303185
+std_2 2.649875563084108
+Dataset Mean: 7.055357851639096
+Dataset Variance: 7.022145916754325
+Dataset Standard Deviation (Std): 2.6499331909982797
+
 """

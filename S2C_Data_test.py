@@ -1,3 +1,13 @@
+"""
+在 S2C 数据集上看拟合效果
+
+Benchmark
+* CLIP: 代表用原始 CLIP 计算相似度评分
+* ImageReward: 用原始 ImageRewarad 计算一致性
+* CLIP_v1(without_text): 图像编码器编码特征，然后 MLP 输出标量
+* CLIP_v2(with_text): 冻结文本编码器，但是 rewards 是相似度
+"""
+
 import os
 os.environ['http_proxy'] = 'http://127.0.0.1:7890'
 os.environ['https_proxy'] = 'http://127.0.0.1:7890'
@@ -9,8 +19,9 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from utils import *
-from clip_eval import CLIPReward_load
-from rm_eval import ImageReward_load
+
+from CLIPReward import CLIPReward_load
+from ImageReward import ImageReward_load
 
 
 def parse_args():
@@ -25,11 +36,11 @@ def parse_args():
         "--benchmark",
         default="ImageReward",
         type=str,
-        help="ImageReward, Aesthetic, BLIP or CLIP, splitted with comma(,) if there are multiple benchmarks.",
+        help="ImageReward, Aesthetic, BLIP or CLIP, CLIP_v1, CLIP_v2, splitted with comma(,) if there are multiple benchmarks.",
     )
     parser.add_argument(
         "--result_dir",
-        default="./benchmark",
+        default="./benchmark_S2C",
         type=str,
         help="Path to the metric results directory",
     )
@@ -47,7 +58,9 @@ def parse_args():
         help="GPU ID(s) to use for CUDA.",
     )
     parser.add_argument('--batch_size', type=int, default=32)
+
     args = parser.parse_args()
+    args.filename = os.path.basename(__file__)
 
     return args
 
@@ -58,7 +71,16 @@ def print_basic_info(args):
     log.info(f'---------------- Testing: {args.benchmark} ----------------')
     log.info(f'reward model: {args.rm_path}')
     log.info(f'result_dir: {args.result_dir}')
+    log.info(f'run file: {args.filename}')
+    log.info(f'Do eval on S2C Dataset ……')
 
+
+def cal_acc(rewards):
+    # rewards: [bsz, 2]
+    rewards_diff = rewards[:, 0] - rewards[:, 1]
+    num_acc = torch.sum((rewards_diff > 0).clone().detach())
+
+    return num_acc
 
 
 def main(args):
@@ -69,31 +91,31 @@ def main(args):
 
     # load model
     if args.benchmark == 'CLIP':
-            reward_model = CLIPReward_load(args.rm_path, device=device)
+        reward_model = CLIPReward_load(weight = 'ViT-L/14', device=device)
+    elif args.benchmark == 'CLIP_v2':
+        reward_model = CLIPReward_load(args.rm_path, device=device)
     elif args.benchmark == 'ImageReward':
         reward_model = ImageReward_load(args.rm_path, device=device)
     
     # start Testing
     num_all = len(s2c_data)
     num_acc = 0
+    with torch.no_grad():
+        for i, batch_data in tqdm(enumerate(s2c_test_loader), total = len(s2c_test_loader)):
 
-    for i, data in tqdm(enumerate(s2c_test_loader), total = len(s2c_test_loader)):
-        texts, sim_imgs, com_imgs = data        
-        sim_score = reward_model.scores_list(texts, sim_imgs)
-        com_score = reward_model.scores_list(texts, com_imgs)
-        
-        count_acc = sum(x < y for x, y in zip(sim_score, com_score))
-        num_acc += count_acc
-        # print(sim_imgs)
-        # print(com_imgs)
-        # print(sim_score)
-        # print(com_score)
-        iter_samples = (i + 1) * args.batch_size
+            rewards = reward_model(batch_data) #[bsz, 2]
 
-        avg_acc = count_acc / args.batch_size
-        total_avg_acc = num_acc / iter_samples
+            count_acc = cal_acc(rewards)
+            # print(rewards)
+            # print(count_acc)
+            # return 
+            num_acc += count_acc
+            iter_samples = (i + 1) * args.batch_size
 
-        args.log.info(f'iter {i} | acc: {avg_acc} | all_acc: {total_avg_acc}')
+            avg_acc = count_acc / args.batch_size
+            total_avg_acc = num_acc / iter_samples
+
+            args.log.info(f'iter {i} | acc: {avg_acc} | all_acc: {total_avg_acc}')
         
         
     
@@ -112,6 +134,8 @@ if __name__ == "__main__":
         
     # add log
     ckpt_name = args.rm_path.split("/")[-1].split(".")[0]
+    if args.benchmark == 'CLIP':
+        ckpt_name = 'ViT-L-14'
     log_path = os.path.join(args.result_dir, 'log_{}_{}.log'.format(str(args.benchmark), str(ckpt_name)))
     args.log = logger_config(log_path)
 
@@ -121,10 +145,12 @@ if __name__ == "__main__":
 
 """
 # 测试 ImageReward
-python main.py
+python S2C_Data_test.py 
 
 # 测试 CLIP
-python main.py --benchmark "CLIP" --rm_path /data/liutao/checkpoints/ClipReward/bs32_lr=5e-4.pt
+python S2C_Data_test.py  --benchmark "CLIP" --gpu_id 3
 
+# 测试 Custome CLIP(自己训练的)
+python S2C_Data_test.py --benchmark "CLIP_v2" --rm_path /data/liutao/checkpoints/ClipReward/bs32_lr=5e-06_sig.pt
 
 """
